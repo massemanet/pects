@@ -1,0 +1,11 @@
+{application, pects,
+ [{description, "PErsisted Cached Term Storage"},
+  {vsn, "0.0.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib]},
+  {maintainers, ["Mats Cronqvist"]},
+  {licenses, ["MIT"]},
+  {links, [{"Github", "https://github.com/massemanet/pects"}]}
+ ]}.
