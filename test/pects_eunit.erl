@@ -20,27 +20,41 @@ basic_test_() ->
 
 start() ->
     pects:init(foo, "/tmp/pects"),
-    pects:write(foo, {a,b}, #{a => "A",b => "B"}),
-    pects:write(foo, {a,c}, #{a => "A",b => "C"}).
+    pects:write(foo, key, value),
+    pects:write(foo, {a, a}, [{a, "A"},{b, "B"}]),
+    pects:write(foo, {a, b}, #{a => "A",b => "B"}),
+    pects:write(foo, {a, c}, #{a => "A",b => "C"}),
+    pects:write(foo, {a, d}, {a, d}).
 
 stop(_) ->
     pects:delete(foo).
 
 t_init(_) ->
-    [?_assertMatch({error, exists},
-                   pects:init(foo, ""))].
+    [?_assertMatch(
+        {error, exists},
+        pects:init(foo, ""))].
 
 t_match(_) ->
-    [?_assertMatch([{{a,_},#{}},{{a,_},#{}}],
-                   pects:match(foo, '_', #{a => "A"})),
-     ?_assertMatch([{{a,_},#{}},{{a,_},#{}}],
-                   pects:match(foo, {a,'_'}, #{a => "A"}))].
+    [?_assertMatch(
+        [{{a, a}, [_, _]}],
+        pects:match(foo, '_', [{a, "A"}])),
+     ?_assertMatch(
+        [{{a, d}, {a, d}}],
+        pects:match(foo, '_', {a,'_'})),
+     ?_assertMatch(
+        [{{a, b}, #{}}, {{a, c}, #{}}],
+        pects:match(foo, '_', #{a => "A"})),
+     ?_assertMatch(
+        [{{a, b}, #{}}, {{a, c}, #{}}],
+        pects:match(foo, {a,'_'}, #{a => "A"}))].
 
 t_lookup(_) ->
-    [?_assertMatch([{{a,b}, #{}}],
-                   pects:read(foo, {a,b}))].
+    [?_assertMatch(
+        [{{a, b}, #{}}],
+        pects:read(foo, {a,b}))].
 
 t_delete(_) ->
-    pects:delete(foo,{a,b}),
-    [?_assertMatch([],
-                   pects:read(foo, {a,b}))].
+    pects:delete(foo, {a, b}),
+    [?_assertMatch(
+        [],
+        pects:read(foo, {a, b}))].

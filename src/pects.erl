@@ -3,6 +3,7 @@
 -export([init/2, read/2, write/3, delete/1, delete/2, match/3]).
 
 %%-----------------------------------------------------------------------------
+%% API
 init(Tab, Dir) ->
     case ets:info(Tab, size) of
         undefined ->
@@ -56,12 +57,15 @@ delete(Tab, Key) ->
 match(Tab, K, V) ->
     case K of
         '_' ->
-            ets:foldl(mk_matchf(V), [], Tab);
+            ets:foldr(mk_matchf(V), [], Tab);
         _ ->
             Matches = ets:select(Tab, [{{{data, K}, '_', '_'}, [], ['$_']}]),
-            lists:foldl(mk_matchf(V), [], Matches)
+            lists:foldr(mk_matchf(V), [], Matches)
     end.
+
 %%----------------------------------------------------------------------------
+%% locking implementation
+
 lock(Tab, Key) ->
     case ets:lookup(Tab, {data, Key}) of
         [] -> lock_new(Tab, Key);
@@ -95,6 +99,9 @@ cas(Tab, Old, New) ->
         R -> error({error_many_rows, {Tab, element(1, Old), R}})
     end.
 
+%%----------------------------------------------------------------------------
+%% matching implementation
+
 mk_matchf(V) ->
     fun({{data, Key}, _, [Val]}, Acc) ->
             try
@@ -114,12 +121,25 @@ match(V, V) ->
 match(A, B) when is_map(A), is_map(B) ->
     maps:filter(mk_mapf(B), A);
 match(A, B) when is_list(A), is_list(B) ->
-    lists:zipwith(fun(Ea, Eb) -> match(Ea, Eb) end, A, B);
+    lists:foreach(mk_listf(B), A);
 match(A, B) when is_tuple(A), is_tuple(B) ->
     match(tuple_to_list(A), tuple_to_list(B)).
 
 mk_mapf(M) ->
     fun(K, V) -> match(V, maps:get(K, M)) end.
+
+mk_listf(L) ->
+    fun(E) -> take_first(fun(F) -> match(E, F) end, L) end.
+
+take_first(F, []) ->
+    error({take_first_fail, F});
+take_first(F, [T|Ts]) ->
+    try F(T)
+    catch _:_ -> take_first(F, Ts)
+    end.
+
+%%----------------------------------------------------------------------------
+%% persistence implementation
 
 persist(Tab, Key, Val) ->
     file:write_file(data_file(Tab, Key), term_to_binary({Key, Val})).
