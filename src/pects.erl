@@ -7,7 +7,7 @@
 init(Tab, Dir) ->
     case ets:info(Tab, size) of
         undefined ->
-            ets:new(Tab, [named_table, ordered_set]),
+            ets:new(Tab, [named_table, ordered_set, public]),
             ets:insert(Tab, {{meta, data_dir}, Dir}),
             ok = filelib:ensure_dir(data_file(Tab, dummy));
         _ ->
@@ -39,8 +39,7 @@ delete(Tab) ->
     Dest = Source++"_",
     file:rename(Source, Dest),
     catch ets:delete(Tab),
-    spawn(fun() -> rmrf(Dest) end),
-    ok.
+    rmrf(Dest).
 
 delete(Tab, Key) ->
     try lock(Tab, Key) of
@@ -49,6 +48,7 @@ delete(Tab, Key) ->
             ets:delete(Tab, {data, Key}),
             [{Key, Val}];
         [] ->
+            ets:delete(Tab, {data, Key}),
             []
     catch
         throw:Abort -> {aborted, Abort}

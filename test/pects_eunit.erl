@@ -54,7 +54,15 @@ t_lookup(_) ->
         pects:read(foo, {a,b}))].
 
 t_delete(_) ->
-    pects:delete(foo, {a, b}),
     [?_assertMatch(
+        [{key, value}],
+        pects:read(foo, key)),
+     ?_assertMatch(
+        [{key, value}],
+        pects:delete(foo, key)),
+     ?_assertMatch(
         [],
-        pects:read(foo, {a, b}))].
+        pects:delete(foo, key)),
+     ?_assertMatch(
+        [],
+        pects:read(foo, key))].
