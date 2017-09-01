@@ -5,19 +5,33 @@
 %%-----------------------------------------------------------------------------
 %% API
 init(Tab, Dir) ->
-    case ets:info(Tab, size) of
-        undefined ->
-            ets:new(Tab, [named_table, ordered_set, public]),
-            ets:insert(Tab, {{meta, data_dir}, Dir}),
-            ok = filelib:ensure_dir(data_file(Tab, dummy));
-        _ ->
-            {error, exists}
+    case mk_tmp(Tab) of
+        {ok, TmpTab} ->
+            case populate_and_switch(Tab, TmpTab, Dir) of
+                ok ->
+                    {ok, Tab};
+                Error ->
+                    ets:delete(TmpTab),
+                    Error
+            end;
+        Error ->
+            Error
     end.
 
-read(Tab, Key) ->
-    case ets:lookup(Tab, {data, Key}) of
-        [] -> [];
-        [{_, _, [Val]}] -> [{Key, Val}]
+delete(Tab) ->
+    case mk_tmp(Tab) of
+        {ok, TmpTab} ->
+            Source = data_dir(Tab),
+            Dest = Source++"_defunct",
+            catch ets:delete(Tab),
+            case file:rename(Source, Dest) of
+                ok -> rm_rf(Dest);
+                {error, _} -> ok
+            end,
+            ets:delete(TmpTab),
+            ok;
+        Error ->
+            Error
     end.
 
 write(Tab, Key, Val) ->
@@ -34,13 +48,6 @@ write(Tab, Key, Val) ->
         throw:Abort -> {aborted, Abort}
     end.
 
-delete(Tab) ->
-    Source = data_dir(Tab),
-    Dest = Source++"_",
-    file:rename(Source, Dest),
-    catch ets:delete(Tab),
-    rmrf(Dest).
-
 delete(Tab, Key) ->
     try lock(Tab, Key) of
         [Val] ->
@@ -54,6 +61,12 @@ delete(Tab, Key) ->
         throw:Abort -> {aborted, Abort}
     end.
 
+read(Tab, Key) ->
+    case ets:lookup(Tab, {data, Key}) of
+        [] -> [];
+        [{_, _, [Val]}] -> [{Key, Val}]
+    end.
+
 match(Tab, K, V) ->
     case K of
         '_' ->
@@ -63,6 +76,58 @@ match(Tab, K, V) ->
             lists:foldr(mk_matchf(V), [], Matches)
     end.
 
+%%----------------------------------------------------------------------------
+%% init implementation
+
+mk_tmp(Tab) ->
+    TmpTab = list_to_atom(atom_to_list(Tab)++"_pects_tmp"),
+    try
+        {ok, ets:new(TmpTab, [named_table, ordered_set, public])}
+    catch
+        _:_ -> {error, exists}
+    end.
+
+populate_and_switch(Tab, TmpTab, RootDir) ->
+    case create_dir(Tab, RootDir) of
+        {true, BaseDir} ->
+            switch_tables(TmpTab, Tab);
+        {false, BaseDir} ->
+            populate(BaseDir, TmpTab),
+            switch_tables(TmpTab, Tab);
+        {error, Error} ->
+            {error, {cannot_create_dir, Error}}
+    end.
+
+create_dir(Tab, RootDir) ->
+    BaseDir = filename:join(RootDir, Tab),
+    case filelib:ensure_dir() of
+        ok ->
+            case filelib:is_regular(DefunctFile) of
+                true ->
+                    rmrf(Dir),
+                    ok;
+                false ->
+                    {error, Error} -> {error, {not_writable, Error}}
+    end.
+
+populate(Dir, Tab) ->
+    fold_dir(Dir, mk_regf(Tab), fun(_) -> ok end).
+
+mk_regf(Tab) ->
+    fun(File) ->
+            {ok, B} = file:read_file(File),
+            {Key, Val} = binary_to_term(B),
+            ets:insert(Tab, {{data, Key}, unlocked, [Val]})
+    end.
+
+switch_tables(Tab, TmpTab) ->
+    try
+        ets:rename(TmpTab, Tab)
+    catch
+        _:Error ->
+            catch ets:delete(TmpTab),
+            {error, {switching_failed, Error}}
+    end.
 %%----------------------------------------------------------------------------
 %% locking implementation
 
@@ -96,7 +161,7 @@ cas(Tab, Old, New) ->
     case ets:select_replace(Tab, [{Old, [], [{const, New}]}]) of
         1 -> true;
         0 -> false;
-        R -> error({error_many_rows, {Tab, element(1, Old), R}})
+        R -> error({error_many_rows, {Tab, Old, R}})
     end.
 
 %%----------------------------------------------------------------------------
@@ -144,13 +209,17 @@ take_first(F, [T|Ts]) ->
 persist(Tab, Key, Val) ->
     file:write_file(data_file(Tab, Key), term_to_binary({Key, Val})).
 
-rmrf(F) ->
-    case file:list_dir(F) of
+rm_rf(F) ->
+    fold_dir(F, fun file:delete/1, fun file:del_dir/1).
+
+fold_dir(File, RegF, DirF) ->
+    case file:list_dir(File) of
         {ok, Fs} ->
-            lists:foreach(fun rmrf/1, [filename:join(F,E) || E <- Fs]),
-            file:del_dir(F);
+            AbsFs = [filename:join(File, F) || F <- Fs],
+            lists:foreach(fun(F) -> fold_dir(F, RegF, DirF) end, AbsFs),
+            DirF(File);
         {error, enotdir} ->
-            file:delete(F);
+            RegF(File);
         {error, _} ->
             ok
     end.
@@ -160,5 +229,11 @@ data_file(Tab, Key) ->
     filename:join(data_dir(Tab), Name).
 
 data_dir(Tab) ->
-    [{_, Dir}] = ets:lookup(Tab, {meta, data_dir}),
-    filename:join(Dir, Tab).
+    filename:join([base_dir(Tab), Tab, data]).
+
+meta_dir(Tab) ->
+    filename:join([base_dir(Tab), Tab, meta]).
+
+base_dir(Tab) ->
+    [{_, Dir}] = ets:lookup(Tab, {meta, dir}),
+    Dir.
