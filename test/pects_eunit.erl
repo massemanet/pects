@@ -19,7 +19,8 @@ basic_test_() ->
    }}.
 
 start() ->
-    pects:init(foo, "/tmp/pects"),
+    os:cmd("rm -rf /tmp/pects/foo"),
+    {ok, foo} = pects:init(foo, "/tmp/pects"),
     pects:write(foo, key, value),
     pects:write(foo, {a, a}, [{a, "A"},{b, "B"}]),
     pects:write(foo, {a, b}, #{a => "A",b => "B"}),
@@ -27,11 +28,11 @@ start() ->
     pects:write(foo, {a, d}, {a, d}).
 
 stop(_) ->
-    pects:delete(foo).
+    ok = pects:delete(foo).
 
 t_init(_) ->
     [?_assertMatch(
-        {error, exists},
+        {error, {cannot_create_dir,{not_writable,enoent}}},
         pects:init(foo, ""))].
 
 t_match(_) ->

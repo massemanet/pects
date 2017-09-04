@@ -8,10 +8,9 @@ init(Tab, Dir) ->
     case mk_tmp(Tab) of
         {ok, TmpTab} ->
             case populate_and_switch(Tab, TmpTab, Dir) of
-                ok ->
+                Tab ->
                     {ok, Tab};
                 Error ->
-                    ets:delete(TmpTab),
                     Error
             end;
         Error ->
@@ -90,6 +89,7 @@ mk_tmp(Tab) ->
 populate_and_switch(Tab, TmpTab, RootDir) ->
     case create_dir(Tab, RootDir) of
         {true, BaseDir} ->
+            ets:insert(TmpTab, {{meta, dir}, BaseDir}),
             switch_tables(TmpTab, Tab);
         {false, BaseDir} ->
             populate(BaseDir, TmpTab),
@@ -100,18 +100,18 @@ populate_and_switch(Tab, TmpTab, RootDir) ->
 
 create_dir(Tab, RootDir) ->
     BaseDir = filename:join(RootDir, Tab),
-    case filelib:ensure_dir() of
-        ok ->
-            case filelib:is_regular(DefunctFile) of
-                true ->
-                    rmrf(Dir),
-                    ok;
-                false ->
-                    {error, Error} -> {error, {not_writable, Error}}
+    case filelib:is_dir(BaseDir) of
+        true ->
+            {false, BaseDir};
+        false ->
+            case filelib:ensure_dir(filename:join([BaseDir, data, x])) of
+                ok -> {true, BaseDir};
+                {error, Error} -> {error, {not_writable, Error}}
+            end
     end.
 
 populate(Dir, Tab) ->
-    fold_dir(Dir, mk_regf(Tab), fun(_) -> ok end).
+    fold_dir(filename:join(Dir, data), mk_regf(Tab), fun(_) -> ok end).
 
 mk_regf(Tab) ->
     fun(File) ->
@@ -120,12 +120,12 @@ mk_regf(Tab) ->
             ets:insert(Tab, {{data, Key}, unlocked, [Val]})
     end.
 
-switch_tables(Tab, TmpTab) ->
+switch_tables(From, To) ->
     try
-        ets:rename(TmpTab, Tab)
+        ets:rename(From, To)
     catch
         _:Error ->
-            catch ets:delete(TmpTab),
+            catch ets:delete(From),
             {error, {switching_failed, Error}}
     end.
 %%----------------------------------------------------------------------------
@@ -229,10 +229,7 @@ data_file(Tab, Key) ->
     filename:join(data_dir(Tab), Name).
 
 data_dir(Tab) ->
-    filename:join([base_dir(Tab), Tab, data]).
-
-meta_dir(Tab) ->
-    filename:join([base_dir(Tab), Tab, meta]).
+    filename:join([base_dir(Tab), data]).
 
 base_dir(Tab) ->
     [{_, Dir}] = ets:lookup(Tab, {meta, dir}),
