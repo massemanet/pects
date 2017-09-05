@@ -20,15 +20,15 @@ init(Tab, Dir) ->
 delete(Tab) ->
     case mk_tmp(Tab) of
         {ok, TmpTab} ->
-            Source = data_dir(Tab),
-            Dest = Source++"_defunct",
-            catch ets:delete(Tab),
-            case file:rename(Source, Dest) of
-                ok -> rm_rf(Dest);
-                {error, _} -> ok
-            end,
-            ets:delete(TmpTab),
-            ok;
+            case delete_table(Tab) of
+                {ok, BaseDir} ->
+                    delete_files(BaseDir),
+                    ets:delete(TmpTab),
+                    {ok, Tab};
+                {error, Error} ->
+                    ets:delete(TmpTab),
+                    {error, Error}
+            end;
         Error ->
             Error
     end.
@@ -90,24 +90,13 @@ populate_and_switch(Tab, TmpTab, RootDir) ->
     case create_dir(Tab, RootDir) of
         {true, BaseDir} ->
             ets:insert(TmpTab, {{meta, dir}, BaseDir}),
+            persist(TmpTab, {meta, dir}, BaseDir),
             switch_tables(TmpTab, Tab);
         {false, BaseDir} ->
             populate(BaseDir, TmpTab),
             switch_tables(TmpTab, Tab);
         {error, Error} ->
             {error, {cannot_create_dir, Error}}
-    end.
-
-create_dir(Tab, RootDir) ->
-    BaseDir = filename:join(RootDir, Tab),
-    case filelib:is_dir(BaseDir) of
-        true ->
-            {false, BaseDir};
-        false ->
-            case filelib:ensure_dir(filename:join([BaseDir, data, x])) of
-                ok -> {true, BaseDir};
-                {error, Error} -> {error, {not_writable, Error}}
-            end
     end.
 
 populate(Dir, Tab) ->
@@ -168,15 +157,15 @@ cas(Tab, Old, New) ->
 %% matching implementation
 
 mk_matchf(V) ->
-    fun({{data, Key}, _, [Val]}, Acc) ->
-            try
-                match(V, Val),
-                [{Key, Val}|Acc]
-            catch
-                _:_ -> Acc
-            end;
-       (_, Acc) ->
-            Acc
+    fun(E, Acc) -> matchf(E, Acc, V) end.
+
+matchf(E, Acc, V) ->
+    try
+        {{data, Key}, _, [Val]} = E,
+        match(V, Val),
+        [{Key, Val}|Acc]
+    catch
+        _:_ -> Acc
     end.
 
 match('_', _) ->
@@ -206,8 +195,43 @@ take_first(F, [T|Ts]) ->
 %%----------------------------------------------------------------------------
 %% persistence implementation
 
+create_dir(Tab, RootDir) ->
+    BaseDir = filename:join(RootDir, Tab),
+    case filelib:is_dir(BaseDir) of
+        true ->
+            delete_defunct(BaseDir),
+            {false, BaseDir};
+        false ->
+            case filelib:ensure_dir(filename:join([BaseDir, data, x])) of
+                ok -> {true, BaseDir};
+                {error, Error} -> {error, {not_writable, Error}}
+            end
+    end.
+
 persist(Tab, Key, Val) ->
     file:write_file(data_file(Tab, Key), term_to_binary({Key, Val})).
+
+delete_table(Tab) ->
+    try
+        BaseDir = base_dir(Tab),
+        ets:delete(Tab),
+        {ok, BaseDir}
+    catch
+        _:_ -> {error, no_such_table}
+    end.
+
+delete_files(BaseDir) ->
+    Source = filename:join(BaseDir, data),
+    Dest = Source++"_defunct",
+    case file:rename(Source, Dest) of
+        ok -> rm_rf(Dest);
+        {error, _} -> ok
+    end.
+
+delete_defunct(BaseDir) ->
+    Source = filename:join(BaseDir, data),
+    Dest = Source++"_defunct",
+    rm_rf(Dest).
 
 rm_rf(F) ->
     fold_dir(F, fun file:delete/1, fun file:del_dir/1).

@@ -28,7 +28,7 @@ start() ->
     pects:write(foo, {a, d}, {a, d}).
 
 stop(_) ->
-    ok = pects:delete(foo).
+    {ok, foo} = pects:delete(foo).
 
 t_init(_) ->
     [?_assertMatch(
