@@ -14,7 +14,8 @@ basic_test_() ->
     [fun t_match/1,
      fun t_init/1,
      fun t_lookup/1,
-     fun t_delete/1
+     fun t_delete/1,
+     fun t_reset/1
     ]
    }}.
 
@@ -67,3 +68,12 @@ t_delete(_) ->
      ?_assertMatch(
         [],
         pects:read(foo, key))].
+
+t_reset(_) ->
+    [fun() ->
+             true = ets:delete(foo),
+             {ok, foo} = pects:init(foo, "/tmp/pects/foo"),
+             ?assertMatch(
+                [{{a, b}, #{}}],
+                pects:read(foo, {a,b}))
+     end].
