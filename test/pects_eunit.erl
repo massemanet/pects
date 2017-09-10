@@ -7,17 +7,18 @@
 -include_lib("eunit/include/eunit.hrl").
 
 basic_test_() ->
-  {"basic happy testing.",
-   {foreach,
-    fun start/0,
-    fun stop/1,
-    [fun t_match/1,
-     fun t_init/1,
-     fun t_lookup/1,
-     fun t_delete/1,
-     fun t_reset/1
-    ]
-   }}.
+    {inorder,
+     {"basic happy testing.",
+      {foreach,
+       fun start/0,
+       fun stop/1,
+       [fun t_match/1,
+        fun t_init/1,
+        fun t_lookup/1,
+        fun t_delete/1,
+        fun t_reset/1
+       ]}
+     }}.
 
 start() ->
     os:cmd("rm -rf /tmp/pects/foo"),

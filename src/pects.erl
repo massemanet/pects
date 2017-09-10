@@ -35,12 +35,12 @@ delete(Tab) ->
 
 write(Tab, Key, Val) ->
     try
-        OldVal = lock(Tab, Key),
-        case persist(Tab, Key, Val) of
+        OldVal = lock(Tab, {data, Key}),
+        case persist(Tab, {data, Key}, Val) of
             ok ->
-                unlock(Tab, Key, OldVal, [Val]);
+                unlock(Tab, {data, Key}, OldVal, [Val]);
             {error, Err} ->
-                unlock(Tab, Key, OldVal, OldVal),
+                unlock(Tab, {data, Key}, OldVal, OldVal),
                 error({error_persisting, {Tab, Key, Err}})
         end
     catch
@@ -48,9 +48,9 @@ write(Tab, Key, Val) ->
     end.
 
 delete(Tab, Key) ->
-    try lock(Tab, Key) of
+    try lock(Tab, {data, Key}) of
         [Val] ->
-            file:delete(data_file(Tab, Key)),
+            file:delete(data_file(Tab, {data, Key})),
             ets:delete(Tab, {data, Key}),
             [{Key, Val}];
         [] ->
@@ -106,7 +106,7 @@ mk_regf(Tab) ->
     fun(File) ->
             {ok, B} = file:read_file(File),
             {Key, Val} = binary_to_term(B),
-            ets:insert(Tab, {{data, Key}, unlocked, [Val]})
+            ets:insert(Tab, {Key, unlocked, [Val]})
     end.
 
 switch_tables(From, To) ->
@@ -121,7 +121,7 @@ switch_tables(From, To) ->
 %% locking implementation
 
 lock(Tab, Key) ->
-    case ets:lookup(Tab, {data, Key}) of
+    case ets:lookup(Tab, Key) of
         [] -> lock_new(Tab, Key);
         [{_, unlocked, Old}] -> lock_old(Tab, Key, Old);
         [{_, locked, _}] -> throw(locked);
@@ -129,19 +129,19 @@ lock(Tab, Key) ->
     end.
 
 lock_new(Tab, Key) ->
-    case ets:insert_new(Tab, {{data, Key}, locked, []}) of
+    case ets:insert_new(Tab, {Key, locked, []}) of
         true -> [];
         false -> throw(collision)
     end.
 
 lock_old(Tab, Key, Val) ->
-    case cas(Tab, {{data, Key}, unlocked, Val}, {{data, Key}, locked, Val}) of
+    case cas(Tab, {Key, unlocked, Val}, {Key, locked, Val}) of
         true -> Val;
         false -> throw(collision)
     end.
 
 unlock(Tab, Key, Old, New) ->
-    case cas(Tab, {{data, Key}, locked, Old}, {{data, Key}, unlocked, New}) of
+    case cas(Tab, {Key, locked, Old}, {Key, unlocked, New}) of
         true -> ok;
         false -> error({error_unlocking, {Tab, Key}})
     end.
