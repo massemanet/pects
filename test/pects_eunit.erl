@@ -30,12 +30,21 @@ start() ->
     pects:write(foo, {a, d}, {a, d}).
 
 stop(_) ->
-    {ok, foo} = pects:delete(foo).
+    case pects:delete(foo) of
+        {ok, foo} -> ok;
+        {error, {no_such_table, _}} -> ok
+    end.
 
 t_init(_) ->
     [?_assertMatch(
-        {error, {cannot_create_dir,{not_writable,enoent}}},
-        pects:init(foo, ""))].
+        {error, {exists, _}},
+        pects:init(foo, "")),
+     fun() ->
+            pects:delete(foo),
+            ?assertMatch(
+               {error,{cannot_create_dir,{not_writable,enoent}}},
+               pects:init(foo, ""))
+    end].
 
 t_match(_) ->
     [?_assertMatch(
@@ -72,8 +81,12 @@ t_delete(_) ->
 
 t_reset(_) ->
     [fun() ->
-             true = ets:delete(foo),
-             {ok, foo} = pects:init(foo, "/tmp/pects/foo"),
+             Ref = monitor(process, foo),
+             foo ! quit,
+             receive
+                 {'DOWN', Ref, process, _, _} -> ok
+             end,
+             {ok, foo} = pects:init(foo, "/tmp/pects"),
              ?assertMatch(
                 [{{a, b}, #{}}],
                 pects:read(foo, {a,b}))

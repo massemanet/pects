@@ -5,7 +5,7 @@
 %%-----------------------------------------------------------------------------
 %% API
 init(Tab, Dir) ->
-    case mk_tmp(Tab) of
+    case create_table(Tab) of
         {ok, TmpTab} ->
             case populate_and_switch(Tab, TmpTab, Dir) of
                 Tab ->
@@ -18,19 +18,12 @@ init(Tab, Dir) ->
     end.
 
 delete(Tab) ->
-    case mk_tmp(Tab) of
-        {ok, TmpTab} ->
-            case delete_table(Tab) of
-                {ok, BaseDir} ->
-                    delete_files(BaseDir),
-                    ets:delete(TmpTab),
-                    {ok, Tab};
-                {error, Error} ->
-                    ets:delete(TmpTab),
-                    {error, Error}
-            end;
-        Error ->
-            Error
+    case delete_table(Tab) of
+        {ok, BaseDir} ->
+            delete_files(BaseDir),
+            {ok, Tab};
+        {error, Error} ->
+            {error, Error}
     end.
 
 write(Tab, Key, Val) ->
@@ -78,18 +71,44 @@ match(Tab, K, V) ->
 %%----------------------------------------------------------------------------
 %% init implementation
 
-mk_tmp(Tab) ->
+delete_table(Tab) ->
+    Ref = monitor(process, Tab),
+    Tab ! quit,
+    receive
+        {'DOWN', Ref, process, _, {ok, BaseDir}} ->
+            {ok, BaseDir};
+        {'DOWN', Ref, process, _, Info} ->
+            {error, {no_such_table, Info}};
+        X -> error({ouch, X})
+    end.
+
+create_table(Tab) ->
+    Self = self(),
+    {Pid, Ref} = spawn_monitor(fun() -> owner(Tab, Self) end),
+    receive
+        {'DOWN', Ref, process, Pid, Info} ->
+            {error, {exists, Info}};
+        {'UP', TmpTab} ->
+            demonitor(Ref, [flush]),
+            {ok, TmpTab};
+        X -> exit({urgh, X})
+    end.
+
+owner(Tab, Daddy) ->
     TmpTab = list_to_atom(atom_to_list(Tab)++"_pects_tmp"),
-    try
-        {ok, ets:new(TmpTab, [named_table, ordered_set, public])}
-    catch
-        _:_ -> {error, exists}
+    ets:new(TmpTab, [named_table, ordered_set, public]),
+    try register(Tab, self())
+    catch _:_ -> exit({error, {cannot_register, Tab}})
+    end,
+    Daddy ! {'UP', TmpTab},
+    receive
+        quit -> exit({ok, base_dir(Tab)})
     end.
 
 populate_and_switch(Tab, TmpTab, RootDir) ->
     case create_dir(Tab, RootDir) of
         {true, BaseDir} ->
-            ets:insert(TmpTab, {{meta, dir}, BaseDir}),
+            ets:insert(TmpTab, {{meta, dir}, unlocked, BaseDir}),
             persist(TmpTab, {meta, dir}, BaseDir),
             switch_tables(TmpTab, Tab);
         {false, BaseDir} ->
@@ -211,15 +230,6 @@ create_dir(Tab, RootDir) ->
 persist(Tab, Key, Val) ->
     file:write_file(data_file(Tab, Key), term_to_binary({Key, Val})).
 
-delete_table(Tab) ->
-    try
-        BaseDir = base_dir(Tab),
-        ets:delete(Tab),
-        {ok, BaseDir}
-    catch
-        _:_ -> {error, no_such_table}
-    end.
-
 delete_files(BaseDir) ->
     Source = filename:join(BaseDir, data),
     Dest = Source++"_defunct",
@@ -256,5 +266,8 @@ data_dir(Tab) ->
     filename:join([base_dir(Tab), data]).
 
 base_dir(Tab) ->
-    [{_, Dir}] = ets:lookup(Tab, {meta, dir}),
-    Dir.
+    try
+        [{_, _, Dir}] = ets:lookup(Tab, {meta, dir}),
+        Dir
+    catch _:_ -> exit({error, {base_dir, Tab}})
+    end.
