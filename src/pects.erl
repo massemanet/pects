@@ -119,13 +119,15 @@ populate_and_switch(Tab, TmpTab, RootDir) ->
     end.
 
 populate(Dir, Tab) ->
-    fold_dir(filename:join(Dir, data), mk_regf(Tab), fun(_) -> ok end).
+    fold_dir(filename:join(Dir, data), mk_populatef(Tab)).
 
-mk_regf(Tab) ->
-    fun(File) ->
+mk_populatef(Tab) ->
+    fun({regular, File}) ->
             {ok, B} = file:read_file(File),
             {Key, Val} = binary_to_term(B),
-            ets:insert(Tab, {Key, unlocked, [Val]})
+            ets:insert(Tab, {Key, unlocked, [Val]});
+       ({_, _}) ->
+            ok
     end.
 
 switch_tables(From, To) ->
@@ -244,16 +246,20 @@ delete_defunct(BaseDir) ->
     rm_rf(Dest).
 
 rm_rf(F) ->
-    fold_dir(F, fun file:delete/1, fun file:del_dir/1).
+    fold_dir(F, fun deletef/1).
 
-fold_dir(File, RegF, DirF) ->
+deletef({regular, F}) -> file:delete(F);
+deletef({directory, D}) -> file:del_dir(D);
+deletef(Err) -> exit({strange_file_type, Err}).
+
+fold_dir(File, Fun) ->
     case file:list_dir(File) of
         {ok, Fs} ->
             AbsFs = [filename:join(File, F) || F <- Fs],
-            lists:foreach(fun(F) -> fold_dir(F, RegF, DirF) end, AbsFs),
-            DirF(File);
+            lists:foreach(fun(F) -> fold_dir(F, Fun) end, AbsFs),
+            Fun({directory, File});
         {error, enotdir} ->
-            RegF(File);
+            Fun({regular, File});
         {error, _} ->
             ok
     end.
