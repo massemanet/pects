@@ -73,13 +73,12 @@ match(Tab, K, V) ->
 
 delete_table(Tab) ->
     Ref = monitor(process, Tab),
-    Tab ! quit,
+    catch Tab ! quit,
     receive
         {'DOWN', Ref, process, _, {ok, BaseDir}} ->
             {ok, BaseDir};
         {'DOWN', Ref, process, _, Info} ->
-            {error, {no_such_table, Info}};
-        X -> error({ouch, X})
+            {error, {no_such_table, Info}}
     end.
 
 create_table(Tab) ->
@@ -88,19 +87,20 @@ create_table(Tab) ->
     receive
         {'DOWN', Ref, process, Pid, Info} ->
             {error, {exists, Info}};
-        {'UP', TmpTab} ->
+        {'UP', Pid, TmpTab} ->
             demonitor(Ref, [flush]),
-            {ok, TmpTab};
-        X -> exit({urgh, X})
+            {ok, TmpTab}
     end.
 
 owner(Tab, Daddy) ->
     TmpTab = list_to_atom(atom_to_list(Tab)++"_pects_tmp"),
-    ets:new(TmpTab, [named_table, ordered_set, public]),
-    try register(Tab, self())
-    catch _:_ -> exit({error, {cannot_register, Tab}})
+    try
+        ets:new(TmpTab, [named_table, ordered_set, public]),
+        register(Tab, self())
+    catch
+        _:_ -> exit({error, {cannot_register, Tab}})
     end,
-    Daddy ! {'UP', TmpTab},
+    Daddy ! {'UP', self(), TmpTab},
     receive
         quit -> exit({ok, base_dir(Tab)})
     end.
@@ -230,13 +230,15 @@ create_dir(Tab, RootDir) ->
     end.
 
 persist(Tab, Key, Val) ->
-    file:write_file(data_file(Tab, Key), term_to_binary({Key, Val})).
+    File = data_file(Tab, Key),
+    filelib:ensure_dir(File),
+    file:write_file(File, term_to_binary({Key, Val})).
 
 delete_files(BaseDir) ->
     Source = filename:join(BaseDir, data),
     Dest = Source++"_defunct",
     case file:rename(Source, Dest) of
-        ok -> rm_rf(Dest);
+        ok -> rm_rf(BaseDir);
         {error, _} -> ok
     end.
 
@@ -249,8 +251,7 @@ rm_rf(F) ->
     fold_dir(F, fun deletef/1).
 
 deletef({regular, F}) -> file:delete(F);
-deletef({directory, D}) -> file:del_dir(D);
-deletef(Err) -> exit({strange_file_type, Err}).
+deletef({directory, D}) -> file:del_dir(D).
 
 fold_dir(File, Fun) ->
     case file:list_dir(File) of
@@ -265,11 +266,12 @@ fold_dir(File, Fun) ->
     end.
 
 data_file(Tab, Key) ->
-    Name = integer_to_list(erlang:phash2(Key, 4294967296)),
-    filename:join(data_dir(Tab), Name).
+    filename:join([base_dir(Tab), data|hashed(Key)]).
 
-data_dir(Tab) ->
-    filename:join([base_dir(Tab), data]).
+hashed(Term) ->
+    Hash = crypto:hash(sha256, term_to_binary(Term)),
+    [A, B, C, D|R] = [if X<10 -> X+$0; true -> X+$W end || <<X:5>> <= Hash],
+    [[A, B], [C, D], R].
 
 base_dir(Tab) ->
     try
