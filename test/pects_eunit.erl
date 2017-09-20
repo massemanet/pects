@@ -103,5 +103,5 @@ t_stress(_) ->
                 pects:write(foo, k, v),
                 pects:read(foo, k)
         end,
-    Spawnee = fun(_) -> Recurse(Recurse, Stress, 300) end,
-    [fun() -> tst:pmap(Spawnee, lists:seq(1, 10)) end].
+    Spawnee = fun(_) -> Recurse(Recurse, Stress, 3000) end,
+    [fun() -> tst:pmap(Spawnee, lists:seq(1, 100)) end].

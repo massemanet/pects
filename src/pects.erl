@@ -55,7 +55,8 @@ delete(Tab, Key) ->
 
 read(Tab, Key) ->
     case ets:lookup(Tab, {data, Key}) of
-        [] -> [];
+        []              -> [];
+        [{_, _, []}]    -> [];
         [{_, _, [Val]}] -> [{Key, Val}]
     end.
 
