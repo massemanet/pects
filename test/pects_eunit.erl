@@ -16,7 +16,8 @@ basic_test_() ->
         fun t_init/1,
         fun t_lookup/1,
         fun t_delete/1,
-        fun t_reset/1
+        fun t_reset/1,
+        fun t_stress/1
        ]}
      }}.
 
@@ -91,3 +92,25 @@ t_reset(_) ->
                 [{{a, b}, #{}}],
                 pects:read(foo, {a,b}))
      end].
+
+t_stress(_) ->
+    Recurse = fun(_, _, N) when 0 < N -> ok;(G, P, N) -> P(), G(G, P, N-1) end,
+    Stress =
+        fun() ->
+               pects:init(foo, "/tmp/pects"),
+               pects:write(foo, k, v),
+               pects:read(foo, k)
+        end,
+    Spawnee = fun(_) -> Recurse(Recurse, Stress, 3000) end,
+    [fun() -> pmap(Spawnee, lists:seq(1,1000)) end].
+
+pmap(Fun, Es) ->
+    PidRefs = [spawn_monitor(fun() -> Fun(E) end) || E <- Es],
+    RefVals = pmp(PidRefs, []),
+    RefVals.
+
+pmp([], A) -> A;
+pmp(PidRefs, A) ->
+    receive
+        {'DOWN', Ref, _, Pid, I} -> pmp(PidRefs--[{Pid, Ref}], [{Ref, I}|A])
+    end.
