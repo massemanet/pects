@@ -94,23 +94,14 @@ t_reset(_) ->
      end].
 
 t_stress(_) ->
-    Recurse = fun(_, _, N) when 0 < N -> ok;(G, P, N) -> P(), G(G, P, N-1) end,
+    Recurse = fun(_, _, N) when N < 0 -> ok;
+                 (G, P, N) -> P(), G(G, P, N-1)
+              end,
     Stress =
         fun() ->
-               pects:init(foo, "/tmp/pects"),
-               pects:write(foo, k, v),
-               pects:read(foo, k)
+                pects:init(foo, "/tmp/pects"),
+                pects:write(foo, k, v),
+                pects:read(foo, k)
         end,
-    Spawnee = fun(_) -> Recurse(Recurse, Stress, 3000) end,
-    [fun() -> pmap(Spawnee, lists:seq(1,1000)) end].
-
-pmap(Fun, Es) ->
-    PidRefs = [spawn_monitor(fun() -> Fun(E) end) || E <- Es],
-    RefVals = pmp(PidRefs, []),
-    RefVals.
-
-pmp([], A) -> A;
-pmp(PidRefs, A) ->
-    receive
-        {'DOWN', Ref, _, Pid, I} -> pmp(PidRefs--[{Pid, Ref}], [{Ref, I}|A])
-    end.
+    Spawnee = fun(_) -> Recurse(Recurse, Stress, 300) end,
+    [fun() -> tst:pmap(Spawnee, lists:seq(1, 10)) end].
