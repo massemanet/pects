@@ -1,6 +1,6 @@
 -module(pects).
 
--export([init/2, read/2, write/3, delete/1, delete/2, match/3]).
+-export([init/2, read/2, write/3, bump/2, delete/1, delete/2, match/3]).
 
 %%-----------------------------------------------------------------------------
 %% API
@@ -29,13 +29,7 @@ delete(Tab) ->
 write(Tab, Key, Val) ->
     try
         OldVal = lock(Tab, {data, Key}),
-        case persist(Tab, {data, Key}, Val) of
-            ok ->
-                unlock(Tab, {data, Key}, OldVal, [Val]);
-            {error, Err} ->
-                unlock(Tab, {data, Key}, OldVal, OldVal),
-                error({error_persisting, {Tab, Key, Err}})
-        end
+        persist(Tab, {data, Key}, Val, OldVal)
     catch
         throw:Abort -> {aborted, Abort}
     end.
@@ -49,6 +43,20 @@ delete(Tab, Key) ->
         [] ->
             ets:delete(Tab, {data, Key}),
             []
+    catch
+        throw:Abort -> {aborted, Abort}
+    end.
+
+bump(Tab, Key) ->
+    try
+        case lock(Tab, {data, Key}) of
+            [] ->
+                persist(Tab, {data, Key}, 0, []);
+            [V] when is_integer(V) ->
+                persist(Tab, {data, Key}, V+1, [V]);
+            Err ->
+                error({bad_counter, {Tab, Key, Err}})
+        end
     catch
         throw:Abort -> {aborted, Abort}
     end.
@@ -162,9 +170,14 @@ lock_old(Tab, Key, Val) ->
         false -> throw(collision)
     end.
 
+unlock(Tab, Key, [], []) ->
+    case ets:select_delete(Tab, [{{Key, locked, []}, [], [{const, true}]}]) of
+        1 -> [];
+        Err -> error({error_unlocking, {Tab, Key, Err}})
+    end;
 unlock(Tab, Key, Old, New) ->
     case cas(Tab, {Key, locked, Old}, {Key, unlocked, New}) of
-        true -> ok;
+        true -> New;
         false -> error({error_unlocking, {Tab, Key}})
     end.
 
@@ -228,6 +241,15 @@ create_dir(Tab, RootDir) ->
                 ok -> {true, BaseDir};
                 {error, Error} -> {error, {not_writable, Error}}
             end
+    end.
+
+persist(Tab, Key, Val, OldVal) ->
+    case persist(Tab, Key, Val) of
+        ok ->
+            unlock(Tab, Key, OldVal, [Val]);
+        {error, Err} ->
+            unlock(Tab, Key, OldVal, OldVal),
+            error({error_persisting, {Tab, Key, Err}})
     end.
 
 persist(Tab, Key, Val) ->

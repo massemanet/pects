@@ -16,6 +16,7 @@ basic_test_() ->
         fun t_init/1,
         fun t_lookup/1,
         fun t_delete/1,
+        fun t_bump/1,
         fun t_reset/1,
         fun t_stress/1
        ]}
@@ -24,7 +25,7 @@ basic_test_() ->
 start() ->
     os:cmd("rm -rf /tmp/pects/foo"),
     {ok, foo} = pects:init(foo, "/tmp/pects"),
-    pects:write(foo, key, value),
+    pects:write(foo, key, 12),
     pects:write(foo, {a, a}, [{a, "A"},{b, "B"}]),
     pects:write(foo, {a, b}, #{a => "A",b => "B"}),
     pects:write(foo, {a, c}, #{a => "A",b => "C"}),
@@ -68,10 +69,10 @@ t_lookup(_) ->
 
 t_delete(_) ->
     [?_assertMatch(
-        [{key, value}],
+        [{key, 12}],
         pects:read(foo, key)),
      ?_assertMatch(
-        [{key, value}],
+        [{key, 12}],
         pects:delete(foo, key)),
      ?_assertMatch(
         [],
@@ -79,6 +80,11 @@ t_delete(_) ->
      ?_assertMatch(
         [],
         pects:read(foo, key))].
+
+t_bump(_) ->
+    [?_assertMatch(
+        [13],
+        pects:bump(foo, key))].
 
 t_reset(_) ->
     [fun() ->
