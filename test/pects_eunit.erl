@@ -25,7 +25,7 @@ basic_test_() ->
 
 start() ->
     os:cmd("rm -rf /tmp/pects/foo"),
-    {ok, foo} = pects:init(foo, "/tmp/pects"),
+    {ok, foo} = pects:new(foo, "/tmp/pects"),
     pects:write(foo, key, 12),
     pects:write(foo, {a, a}, [{a, "A"},{b, "B"}]),
     pects:write(foo, {a, b}, #{a => "A",b => "B"}),
@@ -41,12 +41,12 @@ stop(_) ->
 t_init(_) ->
     [?_assertMatch(
         {error, {exists, _}},
-        pects:init(foo, "")),
+        pects:new(foo, "")),
      fun() ->
             pects:delete(foo),
             ?assertMatch(
                {error,{cannot_create_dir,{not_writable,enoent}}},
-               pects:init(foo, ""))
+               pects:new(foo, ""))
     end].
 
 t_match(_) ->
@@ -111,7 +111,7 @@ t_reset(_) ->
              receive
                  {'DOWN', Ref, process, _, _} -> ok
              end,
-             {ok, foo} = pects:init(foo, "/tmp/pects"),
+             {ok, foo} = pects:new(foo, "/tmp/pects"),
              ?assertMatch(
                 [{{a, b}, #{}}],
                 pects:read(foo, {a,b}))
@@ -123,7 +123,7 @@ t_stress(_) ->
               end,
     Stress =
         fun() ->
-                pects:init(foo, "/tmp/pects"),
+                pects:new(foo, "/tmp/pects"),
                 pects:write(foo, k, v),
                 pects:read(foo, k)
         end,

@@ -1,12 +1,12 @@
 -module(pects).
 
--export([init/2, delete/1, exists/1, info/1]).
+-export([new/2, delete/1, exists/1, info/1]).
 -export([read/2, match/3]).
 -export([write/3, bump/2, delete/2]).
 
 %%-----------------------------------------------------------------------------
 %% API
-init(Tab, Dir) ->
+new(Tab, Dir) ->
     case create_table(Tab) of
         {ok, TmpTab} ->
             case populate_and_switch(Tab, TmpTab, Dir) of
