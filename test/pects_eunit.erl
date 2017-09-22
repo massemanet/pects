@@ -99,7 +99,10 @@ t_info(_) ->
 t_bump(_) ->
     [?_assertMatch(
         [13],
-        pects:bump(foo, key))].
+        pects:bump(foo, key)),
+     ?_assertMatch(
+       [1],
+       pects:bump(foo,bmp))].
 
 t_reset(_) ->
     [fun() ->

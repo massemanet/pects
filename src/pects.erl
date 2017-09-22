@@ -73,7 +73,7 @@ bump(Tab, Key) ->
     try
         case lock(Tab, {data, Key}) of
             [] ->
-                persist(Tab, {data, Key}, 0, []);
+                persist(Tab, {data, Key}, 1, []);
             [V] when is_integer(V) ->
                 persist(Tab, {data, Key}, V+1, [V]);
             Err ->
