@@ -1,6 +1,8 @@
 -module(pects).
 
--export([init/2, read/2, write/3, bump/2, delete/1, delete/2, match/3]).
+-export([init/2, delete/1, exists/1, info/1]).
+-export([read/2, match/3]).
+-export([write/3, bump/2, delete/2]).
 
 %%-----------------------------------------------------------------------------
 %% API
@@ -24,6 +26,26 @@ delete(Tab) ->
             {ok, Tab};
         {error, Error} ->
             {error, Error}
+    end.
+
+-include_lib("kernel/include/file.hrl").
+exists(Tab) ->
+    try
+        {ok, Info} = file:read_file_info(base_dir(Tab)),
+        #file_info{type=directory, access=read_write} = Info,
+        true
+    catch
+        _:_ -> false
+    end.
+
+info(Tab) ->
+    MS = [{{{meta, '_'}, '_', '_'}, [], [{const, true}]}],
+    try
+        {ok, #{base_dir => base_dir(Tab),
+               memory => ets:info(Tab, memory),
+               size => ets:info(Tab, size)-ets:select_count(Tab, MS)}}
+    catch
+        _:_ -> {error, no_such_table}
     end.
 
 write(Tab, Key, Val) ->

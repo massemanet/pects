@@ -16,6 +16,7 @@ basic_test_() ->
         fun t_init/1,
         fun t_lookup/1,
         fun t_delete/1,
+        fun t_info/1,
         fun t_bump/1,
         fun t_reset/1,
         fun t_stress/1
@@ -80,6 +81,20 @@ t_delete(_) ->
      ?_assertMatch(
         [],
         pects:read(foo, key))].
+
+t_info(_) ->
+    [?_assertMatch(
+        true,
+        pects:exists(foo)),
+    ?_assertMatch(
+        false,
+        pects:exists(foo0)),
+    ?_assertMatch(
+        {ok,#{}},
+        pects:info(foo)),
+    ?_assertMatch(
+        {error, no_such_table},
+        pects:info(foo0))].
 
 t_bump(_) ->
     [?_assertMatch(
