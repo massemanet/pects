@@ -90,14 +90,16 @@ read(Tab, Key) ->
         [{_, _, [Val]}] -> [{Key, Val}]
     end.
 
+-define(needs_whole_table_scan(K),
+        K =:= '_';
+        hd(K) =:= '_';
+        element(1, K) =:= '_').
+
+match(Tab, K, V) when ?needs_whole_table_scan(K) ->
+    ets:foldr(mk_matchf(V), [], Tab);
 match(Tab, K, V) ->
-    case K of
-        '_' ->
-            ets:foldr(mk_matchf(V), [], Tab);
-        _ ->
-            Matches = ets:select(Tab, [{{{data, K}, '_', '_'}, [], ['$_']}]),
-            lists:foldr(mk_matchf(V), [], Matches)
-    end.
+    Matches = ets:select(Tab, [{{{data, K}, '_', '_'}, [], ['$_']}]),
+    lists:foldr(mk_matchf(V), [], Matches).
 
 %%----------------------------------------------------------------------------
 %% init implementation
